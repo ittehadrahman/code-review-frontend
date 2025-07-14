@@ -677,8 +677,8 @@ export default function CodeReviewPage() {
                       <Hash className="h-8 w-8 mx-auto mb-2 opacity-50" />
                       <p>No line reviews added yet</p>
                       <p className="text-sm">
-                        Click "Add Line Review" or click on line numbers in the
-                        code
+                        Click &quot;Add Line Review&quot; or click on line
+                        numbers in the code
                       </p>
                     </div>
                   ) : (
