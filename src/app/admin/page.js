@@ -13,6 +13,8 @@ import {
   FileText,
   Database,
   Eye,
+  Mail,
+  Users,
 } from "lucide-react";
 
 // API configuration
@@ -60,7 +62,7 @@ const apiRequest = async (endpoint, options = {}) => {
   }
 };
 
-export default function InsertCodePage() {
+export default function AdminPage() {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [fetchingStats, setFetchingStats] = useState(false);
@@ -74,6 +76,7 @@ export default function InsertCodePage() {
     totalReviews: 0,
     completedCodes: 0,
     pendingCodes: 0,
+    uniqueReviewers: 0,
   });
 
   const [allCodes, setAllCodes] = useState([]);
@@ -429,7 +432,7 @@ export default function InsertCodePage() {
             <BarChart3 className="h-5 w-5 mr-2" />
             Platform Statistics
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div className="bg-blue-50 p-4 rounded-lg">
               <div className="text-2xl font-bold text-blue-600">
                 {stats.totalCodes}
@@ -453,6 +456,13 @@ export default function InsertCodePage() {
                 {stats.pendingCodes}
               </div>
               <div className="text-sm text-gray-600">Pending Codes</div>
+            </div>
+            <div className="bg-indigo-50 p-4 rounded-lg">
+              <div className="text-2xl font-bold text-indigo-600 flex items-center">
+                <Users className="h-6 w-6 mr-1" />
+                {stats.uniqueReviewers}
+              </div>
+              <div className="text-sm text-gray-600">Unique Reviewers</div>
             </div>
           </div>
         </div>
@@ -731,6 +741,13 @@ export default function InsertCodePage() {
                                 <span>
                                   Reviews: {code.reviewCount}/{code.maxReviews}
                                 </span>
+                                <span className="flex items-center">
+                                  <Users className="h-3 w-3 mr-1" />
+                                  {code.reviewedBy
+                                    ? code.reviewedBy.length
+                                    : 0}{" "}
+                                  reviewers
+                                </span>
                                 <span
                                   className={`px-2 py-1 rounded text-xs ${
                                     code.isCompleted
@@ -744,6 +761,15 @@ export default function InsertCodePage() {
                                   {code._id}
                                 </span>
                               </div>
+                              {code.reviewedBy &&
+                                code.reviewedBy.length > 0 && (
+                                  <div className="mt-2 text-xs text-gray-500">
+                                    <span className="flex items-center">
+                                      <Mail className="h-3 w-3 mr-1" />
+                                      Reviewed by: {code.reviewedBy.join(", ")}
+                                    </span>
+                                  </div>
+                                )}
                             </div>
                             <button
                               onClick={() =>

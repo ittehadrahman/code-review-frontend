@@ -9,7 +9,10 @@ import {
   CheckCircle,
   RefreshCw,
   Loader2,
-  Settings,
+  Plus,
+  Trash2,
+  Mail,
+  Hash,
 } from "lucide-react";
 
 // API configuration
@@ -59,11 +62,13 @@ export default function CodeReviewPage() {
 
   const [reviewForm, setReviewForm] = useState({
     reviewerName: "",
+    reviewerEmail: "",
     yearsOfExperience: "",
     position: "",
-    reviewComment: "",
-    category: "",
+    generalComment: "",
   });
+
+  const [lineReviews, setLineReviews] = useState([]);
 
   const categories = [
     "Bug/Error",
@@ -72,8 +77,16 @@ export default function CodeReviewPage() {
     "Best Practices",
     "Security",
     "Functionality",
+    "Debugging",
+    "Refactoring",
     "Other",
   ];
+
+  // Get code lines for display
+  const getCodeLines = () => {
+    if (!currentCode?.code) return [];
+    return currentCode.code.split("\n");
+  };
 
   // Check API connection
   const checkConnection = async () => {
@@ -93,25 +106,36 @@ export default function CodeReviewPage() {
 
   // Fetch random code
   const fetchRandomCode = async () => {
+    if (!reviewForm.reviewerEmail.trim()) {
+      setMessage({
+        type: "error",
+        text: "Please enter your email first to get a code for review.",
+      });
+      return;
+    }
+
     setLoading(true);
     setMessage({ type: "", text: "" });
 
     try {
-      const data = await apiRequest("/codes/random");
+      const data = await apiRequest(
+        `/codes/random?email=${encodeURIComponent(
+          reviewForm.reviewerEmail.trim()
+        )}`
+      );
       setCurrentCode(data);
-      setReviewForm({
-        reviewerName: "",
-        yearsOfExperience: "",
-        position: "",
-        reviewComment: "",
-        category: "",
-      });
+      setLineReviews([]);
       setMessage({ type: "success", text: "New code loaded successfully!" });
     } catch (error) {
       if (error.message.includes("404")) {
         setMessage({
           type: "error",
-          text: "No codes available for review. All codes may have been completed.",
+          text: "No codes available for review. You may have reviewed all available codes or all codes are completed.",
+        });
+      } else if (error.message.includes("400")) {
+        setMessage({
+          type: "error",
+          text: "Please enter a valid email address.",
         });
       } else if (
         error.name === "TypeError" &&
@@ -133,6 +157,30 @@ export default function CodeReviewPage() {
     }
   };
 
+  // Add line review
+  const addLineReview = () => {
+    setLineReviews([
+      ...lineReviews,
+      {
+        lineNumber: "",
+        comment: "",
+        category: "",
+      },
+    ]);
+  };
+
+  // Remove line review
+  const removeLineReview = (index) => {
+    setLineReviews(lineReviews.filter((_, i) => i !== index));
+  };
+
+  // Update line review
+  const updateLineReview = (index, field, value) => {
+    const updated = [...lineReviews];
+    updated[index][field] = value;
+    setLineReviews(updated);
+  };
+
   // Submit review
   const submitReview = async () => {
     setSubmitting(true);
@@ -141,11 +189,11 @@ export default function CodeReviewPage() {
     // Client-side validation
     const errors = [];
     if (!reviewForm.reviewerName.trim()) errors.push("Reviewer name");
+    if (!reviewForm.reviewerEmail.trim()) errors.push("Reviewer email");
     if (!reviewForm.yearsOfExperience || reviewForm.yearsOfExperience < 0)
       errors.push("Years of experience");
     if (!reviewForm.position.trim()) errors.push("Position");
-    if (!reviewForm.reviewComment.trim()) errors.push("Review comment");
-    if (!reviewForm.category) errors.push("Category");
+    if (lineReviews.length === 0) errors.push("At least one line review");
 
     if (errors.length > 0) {
       setMessage({
@@ -156,23 +204,71 @@ export default function CodeReviewPage() {
       return;
     }
 
-    if (reviewForm.reviewComment.length < 10) {
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(reviewForm.reviewerEmail)) {
       setMessage({
         type: "error",
-        text: "Review comment must be at least 10 characters long",
+        text: "Please enter a valid email address",
       });
       setSubmitting(false);
       return;
+    }
+
+    // Validate line reviews
+    for (let i = 0; i < lineReviews.length; i++) {
+      const lineReview = lineReviews[i];
+      if (
+        !lineReview.lineNumber ||
+        !lineReview.comment.trim() ||
+        !lineReview.category
+      ) {
+        setMessage({
+          type: "error",
+          text: `Line review ${
+            i + 1
+          }: Please fill in line number, comment, and category`,
+        });
+        setSubmitting(false);
+        return;
+      }
+      if (lineReview.comment.length < 10) {
+        setMessage({
+          type: "error",
+          text: `Line review ${
+            i + 1
+          }: Comment must be at least 10 characters long`,
+        });
+        setSubmitting(false);
+        return;
+      }
+      const lineNum = parseInt(lineReview.lineNumber);
+      const codeLines = getCodeLines();
+      if (lineNum < 1 || lineNum > codeLines.length) {
+        setMessage({
+          type: "error",
+          text: `Line review ${i + 1}: Line number must be between 1 and ${
+            codeLines.length
+          }`,
+        });
+        setSubmitting(false);
+        return;
+      }
     }
 
     try {
       const reviewData = {
         codeId: currentCode._id,
         reviewerName: reviewForm.reviewerName.trim(),
+        reviewerEmail: reviewForm.reviewerEmail.trim().toLowerCase(),
         yearsOfExperience: parseInt(reviewForm.yearsOfExperience),
         position: reviewForm.position.trim(),
-        reviewComment: reviewForm.reviewComment.trim(),
-        category: reviewForm.category,
+        generalComment: reviewForm.generalComment.trim(),
+        lineReviews: lineReviews.map((lr) => ({
+          lineNumber: parseInt(lr.lineNumber),
+          comment: lr.comment.trim(),
+          category: lr.category,
+        })),
       };
 
       await apiRequest("/reviews", {
@@ -243,13 +339,6 @@ export default function CodeReviewPage() {
     checkConnection();
   }, []);
 
-  // Auto-fetch first code when connection is established
-  useEffect(() => {
-    if (connectionStatus === "connected" && !currentCode && !loading) {
-      fetchRandomCode();
-    }
-  }, [connectionStatus]);
-
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -288,44 +377,27 @@ export default function CodeReviewPage() {
                 )}
               </div>
             </div>
-            {/* <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-3">
               <div className="bg-blue-50 px-4 py-2 rounded-lg">
                 <span className="text-sm font-medium text-blue-700">
                   Reviews Submitted: {reviewCount}
                 </span>
               </div>
-              <a
-                href="/admin"
-                className="flex items-center space-x-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors"
-              >
-                <Settings className="h-5 w-5" />
-                <span>Admin Panel</span>
-              </a>
-            </div> */}
+            </div>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* API Configuration Info */}
-        {/* <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-          <div className="flex items-center space-x-2 text-sm text-blue-700">
-            <Code className="h-4 w-4" />
-            <span>
-              API Endpoint:{" "}
-              <code className="bg-blue-100 px-1 rounded">{API_BASE_URL}</code>
-            </span>
-          </div>
-        </div> */}
-
         {/* Welcome Message */}
         <div className="mb-8 bg-white rounded-lg shadow-sm p-6">
           <h2 className="text-xl font-semibold text-gray-900 mb-2">
             Welcome to the Code Review Platform
           </h2>
           <p className="text-gray-600 mb-4">
-            Help improve code quality by providing detailed feedback on code
-            snippets. Each code needs 3 reviews before completion.
+            Help improve code quality by providing line-by-line feedback on code
+            snippets. Each code needs 3 reviews before completion. You can
+            review each code only once.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
             <div className="flex items-center space-x-2">
@@ -334,11 +406,11 @@ export default function CodeReviewPage() {
             </div>
             <div className="flex items-center space-x-2">
               <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-              <span>Provide constructive feedback</span>
+              <span>Provide line-by-line feedback</span>
             </div>
             <div className="flex items-center space-x-2">
               <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
-              <span>Help build better software</span>
+              <span>One review per code per user</span>
             </div>
           </div>
         </div>
@@ -374,8 +446,12 @@ export default function CodeReviewPage() {
                 </h2>
                 <button
                   onClick={fetchRandomCode}
-                  disabled={loading || connectionStatus !== "connected"}
-                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                  disabled={
+                    loading ||
+                    connectionStatus !== "connected" ||
+                    !reviewForm.reviewerEmail.trim()
+                  }
+                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {loading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -410,9 +486,12 @@ export default function CodeReviewPage() {
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4 mb-4">
                     <h4 className="font-medium text-gray-800 mb-2">
-                      Review Guidelines:
+                      Line-by-Line Review Guidelines:
                     </h4>
                     <ul className="text-sm text-gray-600 space-y-1">
+                      <li>
+                        • Click on line numbers to reference specific lines
+                      </li>
                       <li>• Look for bugs, errors, or logical issues</li>
                       <li>• Check for performance improvements</li>
                       <li>• Evaluate code style and readability</li>
@@ -420,9 +499,36 @@ export default function CodeReviewPage() {
                       <li>• Suggest best practices</li>
                     </ul>
                   </div>
-                  <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto text-sm">
-                    <code>{currentCode.code}</code>
-                  </pre>
+                  <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto text-sm">
+                    <code>
+                      {getCodeLines().map((line, index) => (
+                        <div
+                          key={index}
+                          className="flex hover:bg-gray-800 cursor-pointer py-1"
+                          onClick={() => {
+                            const lineNum = index + 1;
+                            if (
+                              !lineReviews.find(
+                                (lr) => lr.lineNumber === lineNum.toString()
+                              )
+                            ) {
+                              const newLineReview = {
+                                lineNumber: lineNum.toString(),
+                                comment: "",
+                                category: "",
+                              };
+                              setLineReviews([...lineReviews, newLineReview]);
+                            }
+                          }}
+                        >
+                          <span className="text-gray-400 mr-4 select-none w-8 text-right">
+                            {index + 1}
+                          </span>
+                          <span className="flex-1">{line || " "}</span>
+                        </div>
+                      ))}
+                    </code>
+                  </div>
                 </div>
               ) : (
                 <div className="text-center py-12 text-gray-500">
@@ -434,6 +540,8 @@ export default function CodeReviewPage() {
                     </div>
                   ) : connectionStatus !== "connected" ? (
                     "Please check your connection to the backend server"
+                  ) : !reviewForm.reviewerEmail.trim() ? (
+                    "Please enter your email first, then click 'Get New Code'"
                   ) : (
                     'Click "Get New Code" to start reviewing'
                   )}
@@ -452,159 +560,256 @@ export default function CodeReviewPage() {
             </div>
 
             <div className="p-6">
-              {currentCode ? (
-                <div className="space-y-6">
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                    <h4 className="font-medium text-blue-800 mb-2">
-                      About You
+              <div className="space-y-6">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h4 className="font-medium text-blue-800 mb-2">About You</h4>
+                  <p className="text-sm text-blue-700">
+                    Your background helps us understand the perspective of your
+                    review. Email is used to ensure one review per code per
+                    user.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <Mail className="h-4 w-4 inline mr-1" />
+                    Your Email *
+                  </label>
+                  <input
+                    type="email"
+                    name="reviewerEmail"
+                    value={reviewForm.reviewerEmail}
+                    onChange={handleInputChange}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter your email address"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <User className="h-4 w-4 inline mr-1" />
+                    Your Name *
+                  </label>
+                  <input
+                    type="text"
+                    name="reviewerName"
+                    value={reviewForm.reviewerName}
+                    onChange={handleInputChange}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter your full name"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Years of Programming Experience *
+                  </label>
+                  <input
+                    type="number"
+                    name="yearsOfExperience"
+                    value={reviewForm.yearsOfExperience}
+                    onChange={handleInputChange}
+                    required
+                    min="0"
+                    max="50"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="e.g., 3"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Your Role/Position *
+                  </label>
+                  <input
+                    type="text"
+                    name="position"
+                    value={reviewForm.position}
+                    onChange={handleInputChange}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="e.g., Senior Developer, Student, Tech Lead"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    General Comments (Optional)
+                  </label>
+                  <textarea
+                    name="generalComment"
+                    value={reviewForm.generalComment}
+                    onChange={handleInputChange}
+                    rows="3"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Overall thoughts about the code..."
+                  />
+                </div>
+
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                  <h4 className="font-medium text-purple-800 mb-2">
+                    Line-by-Line Reviews
+                  </h4>
+                  <p className="text-sm text-purple-700">
+                    Add specific feedback for individual lines of code. You must
+                    add at least one line review.
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-medium text-gray-900">
+                      Line Reviews *
                     </h4>
-                    <p className="text-sm text-blue-700">
-                      Your background helps us understand the perspective of
-                      your review.
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      <User className="h-4 w-4 inline mr-1" />
-                      Your Name *
-                    </label>
-                    <input
-                      type="text"
-                      name="reviewerName"
-                      value={reviewForm.reviewerName}
-                      onChange={handleInputChange}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Enter your full name"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Years of Programming Experience *
-                    </label>
-                    <input
-                      type="number"
-                      name="yearsOfExperience"
-                      value={reviewForm.yearsOfExperience}
-                      onChange={handleInputChange}
-                      required
-                      min="0"
-                      max="50"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="e.g., 3"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Your Role/Position *
-                    </label>
-                    <input
-                      type="text"
-                      name="position"
-                      value={reviewForm.position}
-                      onChange={handleInputChange}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="e.g., Senior Developer, Student, Tech Lead"
-                    />
-                  </div>
-
-                  <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                    <h4 className="font-medium text-purple-800 mb-2">
-                      Your Review
-                    </h4>
-                    <p className="text-sm text-purple-700">
-                      Provide detailed, constructive feedback to help improve
-                      the code.
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Review Category *
-                    </label>
-                    <select
-                      name="category"
-                      value={reviewForm.category}
-                      onChange={handleInputChange}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    <button
+                      onClick={addLineReview}
+                      className="flex items-center space-x-1 px-3 py-1 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded transition-colors"
                     >
-                      <option value="">What aspect are you reviewing?</option>
-                      {categories.map((category) => (
-                        <option key={category} value={category}>
-                          {category}
-                        </option>
-                      ))}
-                    </select>
+                      <Plus className="h-4 w-4" />
+                      <span>Add Line Review</span>
+                    </button>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Detailed Review Comments *
-                    </label>
-                    <textarea
-                      name="reviewComment"
-                      value={reviewForm.reviewComment}
-                      onChange={handleInputChange}
-                      required
-                      rows="6"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      placeholder="Provide specific, actionable feedback. What works well? What could be improved? Any suggestions?"
-                    />
-                    <div className="flex justify-between text-xs mt-1">
-                      <span
-                        className={
-                          reviewForm.reviewComment.length >= 10
-                            ? "text-green-600"
-                            : "text-red-500"
-                        }
-                      >
-                        {reviewForm.reviewComment.length}/10 minimum characters
-                      </span>
-                      <span className="text-gray-500">
-                        Be specific and constructive
-                      </span>
+                  {lineReviews.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500 border-2 border-dashed border-gray-200 rounded-lg">
+                      <Hash className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                      <p>No line reviews added yet</p>
+                      <p className="text-sm">
+                        Click "Add Line Review" or click on line numbers in the
+                        code
+                      </p>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {lineReviews.map((lineReview, index) => (
+                        <div
+                          key={index}
+                          className="border border-gray-200 rounded-lg p-4"
+                        >
+                          <div className="flex items-center justify-between mb-3">
+                            <h5 className="font-medium text-gray-900">
+                              Review #{index + 1}
+                            </h5>
+                            <button
+                              onClick={() => removeLineReview(index)}
+                              className="text-red-500 hover:text-red-700 p-1"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
 
-                  <button
-                    type="button"
-                    onClick={submitReview}
-                    disabled={submitting || connectionStatus !== "connected"}
-                    className="w-full bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium transition-colors flex items-center justify-center space-x-2"
-                  >
-                    {submitting ? (
-                      <>
-                        <Loader2 className="h-5 w-5 animate-spin" />
-                        <span>Submitting Review...</span>
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle className="h-5 w-5" />
-                        <span>Submit Review</span>
-                      </>
-                    )}
-                  </button>
+                          <div className="grid grid-cols-2 gap-4 mb-3">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Line Number *
+                              </label>
+                              <input
+                                type="number"
+                                value={lineReview.lineNumber}
+                                onChange={(e) =>
+                                  updateLineReview(
+                                    index,
+                                    "lineNumber",
+                                    e.target.value
+                                  )
+                                }
+                                min="1"
+                                max={getCodeLines().length}
+                                className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                placeholder="Line #"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Category *
+                              </label>
+                              <select
+                                value={lineReview.category}
+                                onChange={(e) =>
+                                  updateLineReview(
+                                    index,
+                                    "category",
+                                    e.target.value
+                                  )
+                                }
+                                className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                              >
+                                <option value="">Select category</option>
+                                {categories.map((category) => (
+                                  <option key={category} value={category}>
+                                    {category}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
 
-                  <div className="text-center text-sm text-gray-500">
-                    Thank you for contributing to better code quality! 🚀
-                  </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Comment *
+                            </label>
+                            <textarea
+                              value={lineReview.comment}
+                              onChange={(e) =>
+                                updateLineReview(
+                                  index,
+                                  "comment",
+                                  e.target.value
+                                )
+                              }
+                              rows="3"
+                              className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                              placeholder="Detailed feedback for this line..."
+                            />
+                            <div className="text-xs mt-1">
+                              <span
+                                className={
+                                  lineReview.comment.length >= 10
+                                    ? "text-green-600"
+                                    : "text-red-500"
+                                }
+                              >
+                                {lineReview.comment.length}/10 minimum
+                                characters
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="text-center py-12 text-gray-500">
-                  <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p className="mb-2">
-                    Load a code snippet first to start reviewing
-                  </p>
-                  <p className="text-sm">
-                    Your expertise helps improve code quality for everyone
-                  </p>
+
+                <button
+                  type="button"
+                  onClick={submitReview}
+                  disabled={
+                    submitting ||
+                    connectionStatus !== "connected" ||
+                    !currentCode ||
+                    lineReviews.length === 0
+                  }
+                  className="w-full bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium transition-colors flex items-center justify-center space-x-2"
+                >
+                  {submitting ? (
+                    <>
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      <span>Submitting Review...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="h-5 w-5" />
+                      <span>Submit Review</span>
+                    </>
+                  )}
+                </button>
+
+                <div className="text-center text-sm text-gray-500">
+                  Thank you for contributing to better code quality! 🚀
                 </div>
-              )}
+              </div>
             </div>
           </div>
         </div>
