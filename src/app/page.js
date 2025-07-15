@@ -807,7 +807,7 @@ export default function CodeReviewPage() {
                 </button>
 
                 <div className="text-center text-sm text-gray-500">
-                  Thank you for contributing to better code quality! 🚀
+                  Thank you for contributing to better code quality!
                 </div>
               </div>
             </div>
