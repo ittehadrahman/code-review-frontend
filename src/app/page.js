@@ -17,7 +17,8 @@ import {
 
 // API configuration
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+  process.env.NEXT_PUBLIC_API_URL ||
+  "https://code-review-jame.onrender.com/api";
 
 // Enhanced fetch wrapper with error handling
 const apiRequest = async (endpoint, options = {}) => {
