@@ -60,7 +60,7 @@ export default function CodeReviewPage() {
   const [message, setMessage] = useState({ type: "", text: "" });
   const [connectionStatus, setConnectionStatus] = useState("checking");
   const [reviewCount, setReviewCount] = useState(0);
-
+  const [showCodeModal, setShowCodeModal] = useState(false);
   const [reviewForm, setReviewForm] = useState({
     reviewerName: "",
     reviewerEmail: "",
@@ -471,18 +471,39 @@ export default function CodeReviewPage() {
                     <h3 className="font-semibold text-lg text-gray-900">
                       {currentCode.title}
                     </h3>
-                    <div className="flex items-center space-x-4 mt-2 text-sm text-gray-600">
-                      <span className="bg-gray-100 px-2 py-1 rounded">
-                        {currentCode.language}
-                      </span>
-                      <span className="flex items-center">
-                        <Clock className="h-4 w-4 mr-1" />
-                        Reviews: {currentCode.reviewCount}/
-                        {currentCode.maxReviews}
-                      </span>
-                      <span className="text-xs text-gray-500 font-mono">
-                        ID: {currentCode._id}
-                      </span>
+                    <div className="flex items-center justify-between mt-2">
+                      <div className="flex items-center space-x-4 text-sm text-gray-600">
+                        <span className="bg-gray-100 px-2 py-1 rounded">
+                          {currentCode.language}
+                        </span>
+                        <span className="flex items-center">
+                          <Clock className="h-4 w-4 mr-1" />
+                          Reviews: {currentCode.reviewCount}/
+                          {currentCode.maxReviews}
+                        </span>
+                        <span className="text-xs text-gray-500 font-mono">
+                          ID: {currentCode._id}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => setShowCodeModal(true)}
+                        className="flex items-center space-x-2 px-3 py-1 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors text-sm"
+                      >
+                        <svg
+                          className="h-4 w-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M4 8V4m0 0h4m-4 0l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"
+                          />
+                        </svg>
+                        <span>Full Screen</span>
+                      </button>
                     </div>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-4 mb-4">
@@ -500,7 +521,7 @@ export default function CodeReviewPage() {
                       <li>• Suggest best practices</li>
                     </ul>
                   </div>
-                  <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto text-sm">
+                  <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto text-sm max-h-96 overflow-y-auto">
                     <code>
                       {getCodeLines().map((line, index) => (
                         <div
@@ -549,6 +570,82 @@ export default function CodeReviewPage() {
                 </div>
               )}
             </div>
+
+            {/* Full Screen Code Modal */}
+            {showCodeModal && currentCode && (
+              <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+                <div className="bg-white rounded-lg w-full h-full max-w-7xl max-h-full flex flex-col">
+                  <div className="flex items-center justify-between p-4 border-b">
+                    <div>
+                      <h3 className="text-xl font-semibold text-gray-900">
+                        {currentCode.title}
+                      </h3>
+                      <div className="flex items-center space-x-4 mt-1 text-sm text-gray-600">
+                        <span className="bg-gray-100 px-2 py-1 rounded">
+                          {currentCode.language}
+                        </span>
+                        <span className="flex items-center">
+                          <Clock className="h-4 w-4 mr-1" />
+                          Reviews: {currentCode.reviewCount}/
+                          {currentCode.maxReviews}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setShowCodeModal(false)}
+                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                      <svg
+                        className="h-6 w-6"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M6 18L18 6M6 6l12 12"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                  <div className="flex-1 p-4 overflow-hidden">
+                    <div className="bg-gray-900 text-gray-100 p-6 rounded-lg h-full overflow-auto">
+                      <code className="text-base leading-relaxed">
+                        {getCodeLines().map((line, index) => (
+                          <div
+                            key={index}
+                            className="flex hover:bg-gray-800 cursor-pointer py-1"
+                            onClick={() => {
+                              const lineNum = index + 1;
+                              if (
+                                !lineReviews.find(
+                                  (lr) => lr.lineNumber === lineNum.toString()
+                                )
+                              ) {
+                                const newLineReview = {
+                                  lineNumber: lineNum.toString(),
+                                  comment: "",
+                                  category: "",
+                                };
+                                setLineReviews([...lineReviews, newLineReview]);
+                                setShowCodeModal(false); // Close modal after adding review
+                              }
+                            }}
+                          >
+                            <span className="text-gray-400 mr-6 select-none w-10 text-right">
+                              {index + 1}
+                            </span>
+                            <span className="flex-1">{line || " "}</span>
+                          </div>
+                        ))}
+                      </code>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Review Form */}
